@@ -1,21 +1,35 @@
 [project]
-name = "ok-garmin"
-version = "0.1.0"
-description = "Tray app that presses a key when it hears a wake phrase"
+name = "voice-to-hotkey"
+dynamic = ["version"]
+description = "Say a phrase, and your computer presses a hotkey"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "vosk",
-    "cffi",
-    "evdev-binary",
-    "PySide6",
+    "PySide6-Essentials>=6.8",
+    "PySide6-Addons>=6.8",
+    "tomlkit",
+    "evdev-binary; sys_platform == 'linux'",
+    "pynput; sys_platform != 'linux'",
 ]
 
-[project.scripts]
-ok-garmin = "ok_garmin.app:main"
+[project.optional-dependencies]
+dev = ["pytest", "pyinstaller", "pillow"]
+
+[project.gui-scripts]
+vth = "voice_to_hotkey.app:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.dynamic]
+version = { attr = "voice_to_hotkey.__version__" }
+
 [tool.setuptools.package-data]
-ok_garmin = ["icons/*.svg"]
+voice_to_hotkey = ["icons/*.svg"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

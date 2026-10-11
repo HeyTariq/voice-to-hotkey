@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Voice to Hotkey
+Comment=Say a phrase, and your computer presses a hotkey
+Exec=vth
+Icon=voice-to-hotkey
+Categories=Utility;

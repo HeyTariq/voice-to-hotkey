@@ -1,0 +1,91 @@
+name: Release
+
+# Push a tag like v0.1.0 to build every platform and open a draft release.
+# Run it by hand from the Actions tab to get test builds without a release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux
+          - os: windows-2022
+            platform: windows
+          - os: macos-15
+            platform: macos
+            mac_label: AppleSilicon
+          - os: macos-15-intel
+            platform: macos
+            mac_label: Intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Qt system libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libpulse0
+      - run: pip install ".[dev]"
+      - run: pytest
+
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version=$(python -c 'import voice_to_hotkey; print(voice_to_hotkey.__version__)')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match version $version in src/voice_to_hotkey/__init__.py"
+            exit 1
+          fi
+
+      - run: pyinstaller --noconfirm packaging/vth.spec
+
+      - name: Build AppImage
+        if: matrix.platform == 'linux'
+        run: bash packaging/linux/build-appimage.sh
+
+      - name: Build installer
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          choco install innosetup -y --no-progress
+          export VTH_VERSION=$(python -c 'import voice_to_hotkey; print(voice_to_hotkey.__version__)')
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" packaging/windows/vth.iss
+
+      - name: Build disk image
+        if: matrix.platform == 'macos'
+        run: bash packaging/macos/build-dmg.sh ${{ matrix.mac_label }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vth-${{ matrix.platform }}${{ matrix.mac_label && format('-{0}', matrix.mac_label) || '' }}
+          path: |
+            dist/*.AppImage
+            dist/*.exe
+            dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: artifacts/*
