@@ -34,7 +34,7 @@ jobs:
           python-version: "3.12"
       - name: Install Qt system libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libpulse0
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libpulse0 desktop-file-utils
       - run: pip install ".[dev]"
       - run: pytest
 
