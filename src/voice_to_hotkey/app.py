@@ -6,8 +6,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QDir, QFileSystemWatcher, QLockFile, QTimer, QUrl, Qt
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QIcon
-from PySide6.QtMultimedia import QMediaDevices
-from PySide6.QtWidgets import QApplication, QDialog, QMenu, QMessageBox, QSystemTrayIcon
+from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
+from PySide6.QtWidgets import (
+    QApplication, QDialog, QFileDialog, QMenu, QMessageBox, QSystemTrayIcon,
+)
 
 from . import APP_ID, APP_NAME, SHORT_NAME, autostart, keys
 from . import config as config_mod
@@ -46,6 +48,12 @@ class Tray(QSystemTrayIcon):
         self.flashing = False
         self.warned_words = set()
         self.ready = False
+        self.pending_press = False
+
+        self.player = QMediaPlayer()
+        self.player.setAudioOutput(QAudioOutput(self.player))
+        self.player.mediaStatusChanged.connect(self.on_media_status)
+        self.player.errorOccurred.connect(self.on_sound_error)
 
         self.listener = Listener()
         self.listener.detected.connect(self.on_detected)
@@ -81,6 +89,9 @@ class Tray(QSystemTrayIcon):
         self.mic_menu = menu.addMenu("Microphone")
         self.mic_menu.aboutToShow.connect(self.fill_mic_menu)
 
+        self.sound_menu = menu.addMenu("Sound")
+        self.sound_menu.aboutToShow.connect(self.fill_sound_menu)
+
         launch_menu = menu.addMenu("When VTH opens")
         group = QActionGroup(launch_menu)
         self.launch_listen = QAction("Start listening", group, checkable=True)
@@ -111,6 +122,33 @@ class Tray(QSystemTrayIcon):
             action.triggered.connect(lambda _=False, n=name: self.save("microphone", n))
             self.mic_menu.addAction(action)
 
+    def fill_sound_menu(self):
+        self.sound_menu.clear()
+        sound = self.cfg.sound if self.cfg else ""
+        none = self.sound_menu.addAction("No sound")
+        none.setCheckable(True)
+        none.setChecked(not sound)
+        none.triggered.connect(lambda: self.save("sound", ""))
+        if sound:
+            current = self.sound_menu.addAction(Path(sound).name)
+            current.setCheckable(True)
+            current.setChecked(True)
+            current.setEnabled(False)
+        self.sound_menu.addAction("Choose sound…").triggered.connect(self.choose_sound)
+
+    def choose_sound(self):
+        src, _ = QFileDialog.getOpenFileName(
+            None, "Choose a sound to play before the hotkey", "",
+            "Sounds (*.wav *.mp3 *.ogg *.flac)")
+        if not src:
+            return
+        try:
+            name = config_mod.install_sound(Path(src), self.config_path.parent)
+        except OSError as e:
+            self.notify("Couldn't use that sound", str(e), error=True)
+            return
+        self.save("sound", name)
+
     def update_ui(self):
         if self.config_error and not self.cfg:
             status, name = "Fix the config file to continue", "paused"
@@ -130,6 +168,7 @@ class Tray(QSystemTrayIcon):
         self.toggle_action.setText("Pause listening" if self.listening else "Start listening")
         self.toggle_action.setEnabled(self.cfg is not None)
         self.mic_menu.setEnabled(self.cfg is not None)
+        self.sound_menu.setEnabled(self.cfg is not None)
         if self.cfg:
             self.launch_listen.setChecked(self.cfg.start_listening)
             self.launch_paused.setChecked(not self.cfg.start_listening)
@@ -151,8 +190,9 @@ class Tray(QSystemTrayIcon):
         old, self.cfg = self.cfg, new
         recovered = self.config_error is not None
         self.config_error = None
-        # Only start_listening changing doesn't need the listener restarted.
-        changed = old is None or dataclasses.replace(new, start_listening=old.start_listening) != old
+        # start_listening and sound don't need the listener restarted.
+        changed = old is None or dataclasses.replace(
+            new, start_listening=old.start_listening, sound=old.sound) != old
         if self.ready and (recovered or changed):
             self.apply()
         self.update_ui()
@@ -244,6 +284,31 @@ class Tray(QSystemTrayIcon):
         self.update_ui()
 
     def on_detected(self):
+        if self.pending_press:
+            return
+        if not self.cfg.sound:
+            self.press_hotkey()
+            return
+        # The hotkey is pressed once the sound has played to the end.
+        self.pending_press = True
+        self.player.setSource(QUrl())
+        self.player.setSource(QUrl.fromLocalFile(self.cfg.sound))
+        self.player.play()
+
+    def on_media_status(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia and self.pending_press:
+            self.press_hotkey()
+        elif status == QMediaPlayer.MediaStatus.InvalidMedia:
+            self.on_sound_error(None, "The file isn't a sound VTH can play.")
+
+    def on_sound_error(self, _error, message: str):
+        # Whichever of the two error signals arrives first presses the key.
+        if self.pending_press:
+            self.notify("Couldn't play the sound", message, error=True)
+            self.press_hotkey()
+
+    def press_hotkey(self):
+        self.pending_press = False
         try:
             self.keyboard.press(self.cfg.hotkey)
         except Exception as e:

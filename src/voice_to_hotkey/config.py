@@ -1,3 +1,4 @@
+import shutil
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,11 @@ cooldown_seconds = 3
 
 # Lowest per-word recognition confidence (0 to 1) that still counts.
 min_confidence = 0.7
+
+# Sound to play before pressing the hotkey. VTH waits for it to finish.
+# Pick one from the tray menu, or give the path to a WAV, MP3, OGG or FLAC
+# file. Empty means no sound.
+sound = ""
 """
 
 
@@ -52,6 +58,7 @@ class Config:
     microphone: str
     cooldown_seconds: float
     min_confidence: float
+    sound: str
 
 
 def path() -> Path:
@@ -80,6 +87,7 @@ def load(file: Path) -> Config:
             microphone=str(data["microphone"]),
             cooldown_seconds=float(data["cooldown_seconds"]),
             min_confidence=float(data["min_confidence"]),
+            sound=str(data["sound"]),
         )
     except keys.HotkeyError as e:
         raise ConfigError(str(e)) from None
@@ -87,6 +95,11 @@ def load(file: Path) -> Config:
         raise ConfigError(f"The config file has a setting with the wrong type: {e}") from None
     if not cfg.phrases:
         raise ConfigError("Add at least one phrase to the config file.")
+    if cfg.sound:
+        sound = file.parent / Path(cfg.sound).expanduser()
+        if not sound.is_file():
+            raise ConfigError(f"The sound file {sound} doesn't exist.")
+        cfg.sound = str(sound)
     return cfg
 
 
@@ -104,3 +117,15 @@ def set_value(file: Path, key: str, value):
     doc = tomlkit.parse(file.read_text(encoding="utf-8"))
     doc[key] = value
     file.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+
+def install_sound(src: Path, config_dir: Path) -> str:
+    """Copy a sound next to the config, replacing the old one, and return its name."""
+    name = f"sound{src.suffix.lower()}"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, config_dir / f"{name}.new")
+    for old in config_dir.glob("sound.*"):
+        if old.name != f"{name}.new":
+            old.unlink()
+    (config_dir / f"{name}.new").rename(config_dir / name)
+    return name
