@@ -78,6 +78,7 @@ Click the icon to pause or resume. Right-click it (or click, on macOS) for the m
 
 - **Start listening** or **Pause listening**
 - **Microphone**: pick which mic to use.
+- **Sound**: play a sound of your choice before the hotkey is pressed, or turn it off.
 - **When VTH opens**: start listening right away, or stay paused until you click.
 - **Open on login**: start VTH when you log in.
 - **Open config file**: change phrases, the hotkey and other settings.
@@ -96,6 +97,7 @@ Everything lives in `config.toml`. Open it from the tray menu. VTH picks up chan
 | `microphone` | `""` (system default) | Part of the microphone's name |
 | `cooldown_seconds` | `3` | Ignore the phrase this long after it triggers |
 | `min_confidence` | `0.7` | How sure the recognizer must be about each word, from 0 to 1 |
+| `sound` | `""` (no sound) | WAV, MP3, OGG or FLAC file to play before the hotkey. VTH waits for it to end, so keep it short |
 
 Hotkey modifiers are `ctrl`, `shift`, `alt` and `meta` (the Windows key, or Command on a Mac). Keys can be letters, numbers, `f1` to `f24`, arrows, `space`, `enter`, `tab`, `esc`, `home`, `end`, `pageup`, `pagedown`, `insert`, `delete`, `printscreen` and common punctuation.
 
